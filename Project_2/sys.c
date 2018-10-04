@@ -2381,4 +2381,66 @@ asmlinkage long sys_cs1550_down(struct cs1550_sem* sem)
 	spin_lock(&sem_lock);					//entering critical region
 
 	sem->value--;								//decrement semaphore counter
+
+	//out of resources, time to block
+	if (sem->value < 0)
+	{
+		//allocate memory to track blocking process
+		struct proc_node* curr_process = (proc_node*)kmalloc(sizeof(struct proc_node), GFP_ATOMIC);
+		curr_process->next = NULL;				//new process end of linked list
+		curr_process->proc_info = current;					//use global variable to get running process info
+
+		if (sem->front == NULL)
+		{
+			//empty linked list
+			sem->head = curr_process;					//start linked list
+			sem->tail = curr_process;
+		} else {
+			//linked list not empty, add to end
+			sem->tail->next = curr_process;
+			sem->tail = curr_process;
+		}
+		//put process to sleep, while allowing interrurpt
+		set_current_state(TASK_INTERRUPTIBLE);
+		spin_unlock(&sem_lock);						//leaving critical section
+		schedule();									//call scheduler to find another process
+	} else {
+		//no need to block, release lock as outside critical section
+		spin_unlock(&sem_lock);
+	}
+	return 0;
+}
+
+asmlinkage long sys_cs1550_up(struct cs1550_sem* sem)
+{
+	spin_lock(&sem_lock);					//entering critical region
+
+	sem->value++;								//increment semaphore counter
+
+	//remove process from waiting list
+	if (sem->value <= 0)
+	{
+		struct proc_node* curr_process = sem->head;					//grab process at top of the list
+		struct task_struct* curr_info;											//use for wake up call
+
+		if (curr_process != NULL)
+		{
+			//grab process info
+			curr_info = curr_process->proc_info;
+
+			if(curr_process == sem->tail)
+			{
+				//last process in list
+				sem->head = NULL;
+				sem->tail = NULL;
+			} else
+			{
+				sem->head = process->next;
+			}
+			wake_up_process(curr_info);						//wake up sleeping process
+		}
+		kfree(process);								//free up space used by process, no longer needed as being executed
+	}
+	spin_unlock(&sem_lock);					//release spinlock, done with critical
+	return 0;
 }
