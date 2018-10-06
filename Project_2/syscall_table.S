@@ -324,5 +324,5 @@ ENTRY(sys_call_table)
 	.long sys_timerfd
 	.long sys_eventfd
 	.long sys_fallocate
-	.long sys_cs1550_down
+	.long sys_cs1550_down						/*assembly for semaphores in P2*/
 	.long sys_cs1550_up
