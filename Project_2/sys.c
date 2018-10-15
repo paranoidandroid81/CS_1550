@@ -2369,6 +2369,7 @@ struct proc_node
 	struct task_struct* proc_info;		//info about this process
 };
 
+//circularly linked list for easy addition and removal to process queue
 struct cs1550_sem
 {
 	int value;
@@ -2420,7 +2421,7 @@ asmlinkage long sys_cs1550_up(struct cs1550_sem* sem)
 	//remove process from waiting list
 	if (sem->value <= 0)
 	{
-		struct proc_node* curr_process = sem->head;					//grab process at top of the list
+		struct proc_node* curr_process = sem->head;					//grab process at top of the list, FIFO to avoid starvation
 		struct task_struct* curr_info;											//use for wake up call
 
 		if (curr_process != NULL)
