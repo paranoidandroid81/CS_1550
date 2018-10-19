@@ -2387,11 +2387,11 @@ asmlinkage long sys_cs1550_down(struct cs1550_sem* sem)
 	if (sem->value < 0)
 	{
 		//allocate memory to track blocking process
-		struct proc_node* curr_process = (proc_node*)kmalloc(sizeof(struct proc_node), GFP_ATOMIC);
+		struct proc_node* curr_process = (struct proc_node*)kmalloc(sizeof(struct proc_node), GFP_ATOMIC);
 		curr_process->next = NULL;				//new process end of linked list
 		curr_process->proc_info = current;					//use global variable to get running process info
 
-		if (sem->front == NULL)
+		if (sem->head == NULL)
 		{
 			//empty linked list
 			sem->head = curr_process;					//start linked list
@@ -2436,11 +2436,11 @@ asmlinkage long sys_cs1550_up(struct cs1550_sem* sem)
 				sem->tail = NULL;
 			} else
 			{
-				sem->head = process->next;
+				sem->head = curr_process->next;
 			}
 			wake_up_process(curr_info);						//wake up sleeping process
 		}
-		kfree(process);								//free up space used by process, no longer needed as being executed
+		kfree(curr_process);								//free up space used by process, no longer needed as being executed
 	}
 	spin_unlock(&sem_lock);					//release spinlock, done with critical
 	return 0;

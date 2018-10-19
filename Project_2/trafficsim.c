@@ -12,7 +12,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>             //for rand generation
-#include "unistd.h"               //for local run purposes
 
 #define BUFFER_SIZE 10            //max buffer always at 10 cars
 
@@ -25,30 +24,14 @@ struct cs1550_sem
 };
 
 //wrapper functions for semaphore system calls
-void down(cs1550_sem *sem)
+void down(struct cs1550_sem *sem)
 {
   syscall(__NR_cs1550_down, sem);
 }
 
-void up(cs1550_sem *sem)
+void up(struct cs1550_sem *sem)
 {
   syscall(__NR_cs1550_up, sem);
-}
-
-//helper method to consume a car
-void consume(struct cs1550_sem** empty, struct cs1550_sem** full, struct cs1550_sem** lock,
-unsigned int** buf, unsigned int** cons_ptr, char dir)
-{
-	int car;
-	down(*full);						//removing a resource
-	down(*lock);						//entering critical section
-	car = *buf[**cons_ptr % BUFFER_SIZE];					//consume car from buffer
-	sleep(2);							//each car consumed takes 2s to go thru
-	printf("Car %d coming from the %c direction left the construction zone at time %d",
-	car, dir, (int)time(NULL));
-	**cons_ptr = (**cons_ptr + 1) % BUFFER_SIZE;						//increment 'out'
-	up(*lock);							//exiting critical section
-	up(*empty);							//new empty spot from consumption
 }
 
 int main()
@@ -76,28 +59,34 @@ int main()
   empty_south->value = BUFFER_SIZE;         //all slots open for cars initially
   mutex->value = 1;                   //initally unlocked mutex
 
-  //create shared memory for all possible processes in buffer from N direction, plus 2 for 'in' and 'out' in bounded buffer implementation
-  unsigned int* north_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 2) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
+  //create shared memory for all possible processes in buffer from N direction, plus 2 for 'in' and 'out' in bounded buffer implementation, +1 for horn
+  unsigned int* north_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 3) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
   MAP_SHARED|MAP_ANONYMOUS, 0, 0);
-  //create shared memory for all possible processes in buffer from S direction, plus 2 for 'in' and 'out' in bounded buffer implementation
-  unsigned int* south_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 2) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
+  //create shared memory for all possible processes in buffer from S direction, plus 2 for 'in' and 'out' in bounded buffer implementation, + 1 for sleeping
+  unsigned int* south_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 3) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
   MAP_SHARED|MAP_ANONYMOUS, 0, 0);
 
 	//'in' ptr for north traffic
-	unsigned int* prod_north = north_buf;
+	unsigned int* prod_north = north_buf + BUFFER_SIZE;
 	//'in' ptr for south traffic
-	unsigned int* prod_south = south_buf;
+	unsigned int* prod_south = south_buf + BUFFER_SIZE;
 	//initalize both to 0
 	*prod_north = 0;
 	*prod_south = 0;
 
 	//'out' ptr for north traffic
-	unsigned int* cons_north = north_buf + 1;
+	unsigned int* cons_north = north_buf + (BUFFER_SIZE + 1);
 	//'out' ptr for south traffic
-	unsigned int* cons_south = south_buf + 1;
+	unsigned int* cons_south = south_buf + (BUFFER_SIZE + 1);
 	//initialize both to 0
 	*cons_north = 0;
 	*cons_south = 0;
+	//flag for sleeping flagperson
+	unsigned int* sleeping = south_buf + (BUFFER_SIZE + 2);
+	*sleeping = 0;						//initally not sleeping
+	//flag for if horn already blown
+	unsigned int* blown = north_buf + (BUFFER_SIZE + 2);
+	*blown = 0;
 
 	//begin traffic, create 2 producers (1 for N and 1 for S) and 1 consumer (flagperson)
 	//produce and consumer according to traffic rules, switching directions as cars fill up queue
@@ -113,7 +102,13 @@ int main()
 			car = *prod_north;				//get car number
 			north_buf[*prod_north % BUFFER_SIZE] = car;									//insert car into north buf
 			//print out car arriving event
-			printf("Car %d coming from the N direction arrived in the queue at time %d\n", car, (int)time(NULL));
+			printf("Car %d coming from the N direction arrived in the queue at time %d.\n", car, (int)time(NULL));
+			//check if flagperson was sleeping, wake up if so
+			if (*sleeping && !(*blown))
+			{
+				printf("Car %d coming from the N direction, blew their horn at time %d.\n", car, (int)time(NULL));
+				*blown = 1;
+			}
 			*prod_north = (*prod_north + 1) % BUFFER_SIZE;
 			up(mutex);								//out of critical section
 			up(full_north);						//adding another resource
@@ -136,7 +131,13 @@ int main()
 			car = *prod_south;				//get car number
 			south_buf[*prod_south % BUFFER_SIZE] = car;									//insert car into south buf
 			//print out car arriving event
-			printf("Car %d coming from the S direction arrived in the queue at time %d\n", car, (int)time(NULL));
+			printf("Car %d coming from the S direction arrived in the queue at time %d.\n", car, (int)time(NULL));
+			//check if flagperson was sleeping, wake up if so
+			if (*sleeping && !(*blown))
+			{
+				printf("Car %d coming from the S direction, blew their horn at time %d.\n", car, (int)time(NULL));
+				*blown = 1;
+			}
 			*prod_south = (*prod_south + 1) % BUFFER_SIZE;
 			up(mutex);								//out of critical section
 			up(full_south);						//adding another resource
@@ -151,31 +152,64 @@ int main()
 	//begin consumer code (flagperson)
 	if (fork() == 0)
 	{
-		int sleeping = 0;				//flag to determine if flagperson was previously sleeping, now awake
+		int car;
 		while (1)							//consume indefinitely
 		{
 			//no cars at either end, flagperson going to sleep, needs to wait for wakeup
 			if (full_north->value == 0 && full_south->value == 0)
 			{
-				printf("The flagperson is now asleep.\n");
-				sleeping = 1;
+				if (!(*sleeping))
+				{
+					printf("The flagperson is now asleep.\n");
+					*sleeping = 1;
+				}
 				continue;							//iterate again until new cars found
 			}
 			//cars to be taken from buffer
-			if (sleeping)					//was sleeping, now awake
+			if (*sleeping)					//was sleeping, now awake
 			{
 				printf("The flagperson is now awake.\n");
-				sleeping = 0;
+				*sleeping = 0;
+				*blown = 0;
 			}
 			//currently consuming in N and S not full (10), consume in N until empty or until S full
-			while (full_north->value > 0 && full_south->value < 10)
+			printf("Current full_north value = %d\n", full_north->value);								//debugging
+			printf("Current full_south value = %d\n", full_south->value);								//debugging
+
+			while (full_north->value > 0)
 			{
-				consume(&empty_north, &full_north, &mutex, &north_buf, &cons_north, 'N');
+				down(full_north);						//removing a resource
+				down(mutex);						//entering critical section
+				printf("Current consumer index for N: %d.\n", *cons_north);					//debugging
+				car = north_buf[(*cons_north % BUFFER_SIZE)];					//consume car from buffer
+				sleep(2);							//each car consumed takes 2s to go thru
+				printf("Car %d coming from the N direction left the construction zone at time %d.\n",
+				car, (int)time(NULL));
+				*cons_north = (*cons_north + 1) % BUFFER_SIZE;						//increment 'out'
+				up(mutex);							//exiting critical section
+				up(empty_north);							//new empty spot from consumption
+				if (full_south->value == 10)
+				{
+					break;									//need to switch to other side, queue full
+				}
 			}
 			//currently consuming in S and N not full (10), consume in S until empty or until S full
-			while (full_south->value > 0 && full_north->value < 10)
+			while (full_south->value > 0)
 			{
-				consume(&empty_south, &full_south, &mutex, &south_buf, &cons_south, 'S');
+				down(full_south);						//removing a resource
+				down(mutex);						//entering critical section
+				printf("Current consumer index for S: %d.\n", *cons_south);					//debugging
+				car = south_buf[(*cons_south % BUFFER_SIZE)];					//consume car from buffer
+				sleep(2);							//each car consumed takes 2s to go thru
+				printf("Car %d coming from the S direction left the construction zone at time %d.\n",
+				car, (int)time(NULL));
+				*cons_south = (*cons_south + 1) % BUFFER_SIZE;						//increment 'out'
+				up(mutex);							//exiting critical section
+				up(empty_south);							//new empty spot from consumption
+				if (full_north->value == 10)
+				{
+					break;									//need to switch to other side, queue full
+				}
 			}
 		}
 	}
