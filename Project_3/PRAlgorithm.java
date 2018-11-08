@@ -4,13 +4,14 @@
  *  Author: Michael Korst
  */
 
- import java.io.*;
- import java.io.IOException;
- import java.util.*;
+  import java.io.IOException;
+  import java.io.*;
+  import java.io.IOException;
+  import java.io.PrintWriter;
+  import java.util.*;
 
  public class PRAlgorithm
  {
-   private final int PAGE_SIZE = (int)Math.pow(2, 12);      //page = 4KB = 2^12
    private int num_frames;                                 //number of frames in sim
    private String alg_type = "";                               //algorithm name
    private String tracefile = "";                               //sim trace file
@@ -79,6 +80,19 @@
      System.out.println("Total memory accesses:\t" + mem_accesses);
      System.out.println("Total page faults:\t" + page_faults);
      System.out.println("Total writes to disk:\t" + disk_writes);
+   }
+
+   //prints page fault stats to csv file for efficient graphing
+   public void print_csv() throws IOException
+   {
+     StringBuilder sb = new StringBuilder();
+     sb.append(tracefile);
+     sb.append("-");
+     sb.append(alg_type);
+     sb.append(".csv");
+     PrintWriter out_csv = new PrintWriter(new FileWriter(sb.toString(), true));
+     out_csv.write(new Integer(page_faults).toString());
+     out_csv.close();
    }
 
    //begin algorithm methods
@@ -193,7 +207,6 @@
                to_evict = page_to_entry.get(candidate_page);
                break;
              }
-             System.out.println("Evict idx: " + to_evict);        //DEBUG
              int next_use = access_order.get(candidate_page).get(0);          //first reference of current frame, check if oldest
              farthest = access_order.get(phys_mem.get(to_evict).getPageNum()).get(0);      //find farthest used reference of current possible eviction frame
              //now compare current candidate, if used farther in future, make it top candidate
@@ -244,7 +257,6 @@
      br = new BufferedReader(new FileReader(tracefile));
      String line = br.readLine();
      int curr_page;
-     line = br.readLine();
      //begin reading thru memory accesses, loading into memory based on clock algorithm
      char mode;               //read or write?
      int frames_loaded = 0;           //track how many phys frames loaded into memory, max = num_frames
@@ -358,7 +370,6 @@
      br = new BufferedReader(new FileReader(tracefile));
      String line = br.readLine();
      int curr_page;
-     line = br.readLine();
      //begin reading thru memory accesses, loading into memory based on clock algorithm
      char mode;               //read or write?
      int frames_loaded = 0;           //track how many phys frames loaded into memory, max = num_frames
@@ -468,7 +479,6 @@
      br = new BufferedReader(new FileReader(tracefile));
      String line = br.readLine();
      int curr_page;
-     line = br.readLine();
      //begin reading thru memory accesses, loading into memory based on clock algorithm
      char mode;               //read or write?
      int frames_loaded = 0;           //track how many phys frames loaded into memory, max = num_frames
