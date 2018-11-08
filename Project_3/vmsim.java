@@ -54,5 +54,6 @@
      //now, run specified algorithm and print out stats
      alg_sim.run_alg();
      alg_sim.print_stats();
+     System.exit(0);          //all done!
    }
  }

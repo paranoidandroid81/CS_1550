@@ -1,5 +1,9 @@
-//Implementation of fixed length queue for use in fifo
-//Implements Java queue interface
+/*Implementation of fixed length queue for use in fifo
+* Uses circular queue where head is removed when full
+* Increments index to next oldest as remove
+* CS1550: Project 3
+* Author: Michael Korst
+*/
 
 import java.util.*;
 
@@ -30,6 +34,7 @@ public class FixedLengthQueue implements Queue<PTE>
   @Override
   public boolean offer(PTE new_frame)
   {
+    //replace oldest with new, increment head ptr
     PTE oldest_frame = frames[index];
     frames[index] = new_frame;
     incrIndex();
@@ -194,6 +199,7 @@ public class FixedLengthQueue implements Queue<PTE>
 
   private int nextIndex(int curr_idx)
   {
+    //if past end, go back to beginning, circular
     if (curr_idx + 1 >= frames.length)
     {
       return 0;
