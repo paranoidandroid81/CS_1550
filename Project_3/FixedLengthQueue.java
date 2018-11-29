@@ -6,6 +6,7 @@
 */
 
 import java.util.*;
+import java.lang.*;
 
 public class FixedLengthQueue implements Queue<PTE>
 {
@@ -220,14 +221,9 @@ public class FixedLengthQueue implements Queue<PTE>
     }
   }
 
+  //get index of next to remove
   private int getHeadIndex()
   {
-    if (index == 0)
-    {
-      return frames.length - 1;
-    } else
-    {
-      return index - 1;
-    }
+    return index;
   }
 }

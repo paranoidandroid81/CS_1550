@@ -60,10 +60,10 @@ int main()
   mutex->value = 1;                   //initally unlocked mutex
 
   //create shared memory for all possible processes in buffer from N direction, plus 2 for 'in' and 'out' in bounded buffer implementation, +1 for horn
-  unsigned int* north_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 3) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
+  unsigned int* north_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 4) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
   MAP_SHARED|MAP_ANONYMOUS, 0, 0);
   //create shared memory for all possible processes in buffer from S direction, plus 2 for 'in' and 'out' in bounded buffer implementation, + 1 for sleeping
-  unsigned int* south_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 3) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
+  unsigned int* south_buf = (unsigned int*)mmap(NULL, (BUFFER_SIZE + 4) * sizeof(unsigned int), PROT_READ|PROT_WRITE,
   MAP_SHARED|MAP_ANONYMOUS, 0, 0);
 
 	//'in' ptr for north traffic
@@ -88,6 +88,14 @@ int main()
 	unsigned int* blown = north_buf + (BUFFER_SIZE + 2);
 	*blown = 0;
 
+	//number of car throughout program
+	unsigned int* car_num = south_buf + (BUFFER_SIZE + 3);
+	*car_num = 0;
+
+	//number of time at beginning, used to calculate time elapsed
+	unsigned int* init_time = north_buf + (BUFFER_SIZE + 3);
+	*init_time = (int)time(NULL);
+
 	//begin traffic, create 2 producers (1 for N and 1 for S) and 1 consumer (flagperson)
 	//produce and consumer according to traffic rules, switching directions as cars fill up queue
 	//producer creation with child processes, North first then South
@@ -99,17 +107,18 @@ int main()
 		{
 			down(empty_north);				//removing empty spot
 			down(mutex);						//entering critical section
-			car = *prod_north;				//get car number
+			car = *car_num;				//get car number
 			north_buf[*prod_north % BUFFER_SIZE] = car;									//insert car into north buf
 			//print out car arriving event
-			printf("Car %d coming from the N direction arrived in the queue at time %d.\n", car, (int)time(NULL));
+			printf("Car %d coming from the N direction arrived in the queue at time %d.\n", car, ((int)time(NULL) - (*init_time)));
 			//check if flagperson was sleeping, wake up if so
 			if (*sleeping && !(*blown))
 			{
-				printf("Car %d coming from the N direction, blew their horn at time %d.\n", car, (int)time(NULL));
+				printf("Car %d coming from the N direction, blew their horn at time %d.\n", car, ((int)time(NULL) - (*init_time)));
 				*blown = 1;
 			}
 			*prod_north = (*prod_north + 1) % BUFFER_SIZE;
+			*car_num = *car_num + 1;
 			up(mutex);								//out of critical section
 			up(full_north);						//adding another resource
 			r = rand() % 10;						//generate random to see if another car is coming
@@ -128,17 +137,18 @@ int main()
 		{
 			down(empty_south);				//removing empty spot
 			down(mutex);						//entering critical section
-			car = *prod_south;				//get car number
+			car = *car_num;				//get car number
 			south_buf[*prod_south % BUFFER_SIZE] = car;									//insert car into south buf
 			//print out car arriving event
-			printf("Car %d coming from the S direction arrived in the queue at time %d.\n", car, (int)time(NULL));
+			printf("Car %d coming from the S direction arrived in the queue at time %d.\n", car, ((int)time(NULL) - (*init_time)));
 			//check if flagperson was sleeping, wake up if so
 			if (*sleeping && !(*blown))
 			{
-				printf("Car %d coming from the S direction, blew their horn at time %d.\n", car, (int)time(NULL));
+				printf("Car %d coming from the S direction, blew their horn at time %d.\n", car, ((int)time(NULL) - (*init_time)));
 				*blown = 1;
 			}
 			*prod_south = (*prod_south + 1) % BUFFER_SIZE;
+			*car_num = *car_num + 1;
 			up(mutex);								//out of critical section
 			up(full_south);						//adding another resource
 			r = rand() % 10;						//generate random to see if another car is coming
@@ -172,19 +182,17 @@ int main()
 				*sleeping = 0;
 				*blown = 0;
 			}
+
 			//currently consuming in N and S not full (10), consume in N until empty or until S full
-			printf("Current full_north value = %d\n", full_north->value);								//debugging
-			printf("Current full_south value = %d\n", full_south->value);								//debugging
 
 			while (full_north->value > 0)
 			{
 				down(full_north);						//removing a resource
 				down(mutex);						//entering critical section
-				printf("Current consumer index for N: %d.\n", *cons_north);					//debugging
 				car = north_buf[(*cons_north % BUFFER_SIZE)];					//consume car from buffer
 				sleep(2);							//each car consumed takes 2s to go thru
 				printf("Car %d coming from the N direction left the construction zone at time %d.\n",
-				car, (int)time(NULL));
+				car, ((int)time(NULL) - (*init_time)));
 				*cons_north = (*cons_north + 1) % BUFFER_SIZE;						//increment 'out'
 				up(mutex);							//exiting critical section
 				up(empty_north);							//new empty spot from consumption
@@ -198,11 +206,10 @@ int main()
 			{
 				down(full_south);						//removing a resource
 				down(mutex);						//entering critical section
-				printf("Current consumer index for S: %d.\n", *cons_south);					//debugging
 				car = south_buf[(*cons_south % BUFFER_SIZE)];					//consume car from buffer
 				sleep(2);							//each car consumed takes 2s to go thru
 				printf("Car %d coming from the S direction left the construction zone at time %d.\n",
-				car, (int)time(NULL));
+				car, ((int)time(NULL) - (*init_time)));
 				*cons_south = (*cons_south + 1) % BUFFER_SIZE;						//increment 'out'
 				up(mutex);							//exiting critical section
 				up(empty_south);							//new empty spot from consumption
